@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Center Maintenance Rotation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 3"/><circle cx="16" cy="16" r="4" fill="currentColor"/></svg>
+      </div>
+      <div>
+        <h1>Data Center Maintenance Rotation</h1>
+        <p>Ronda de mantenimiento con lista circular doble</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="connection" id="connection-status" data-state="loading"><span class="dot"></span><span class="label">Conectando…</span></span>
+      <button class="btn ghost" id="btn-integrity" type="button">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2l6 3v5c0 4-3 7-6 8-3-1-6-4-6-8V5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 10l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        Verificar integridad
+      </button>
+      <button class="btn ghost" id="btn-demo" type="button">Cargar demo</button>
+      <button class="btn primary" id="btn-new-task" type="button">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8"/></svg>
+        Nueva tarea
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="kpis" aria-label="Indicadores de mantenimiento">
+      <article class="kpi"><span class="kpi-label">Tareas activas</span><strong id="kpi-total">—</strong></article>
+      <article class="kpi"><span class="kpi-label">Pendientes</span><strong id="kpi-pending">—</strong></article>
+      <article class="kpi"><span class="kpi-label">En ejecución</span><strong id="kpi-in-progress">—</strong></article>
+      <article class="kpi"><span class="kpi-label">Completadas</span><strong id="kpi-completed">—</strong></article>
+      <article class="kpi"><span class="kpi-label">Bloqueadas</span><strong id="kpi-blocked">—</strong></article>
+      <article class="kpi accent"><span class="kpi-label">Prioridad alta / crítica</span><strong id="kpi-high">—</strong></article>
+    </section>
+
+    <section class="panel ring-panel" aria-labelledby="ring-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="ring-title">Lista circular doble</h2>
+          <p class="muted">Cada tarjeta es un <code>MaintenanceNode</code>. Haz clic en un nodo para seleccionarlo como <code>current</code>.</p>
+        </div>
+        <div class="segmented" role="group" aria-label="Tipo de vista">
+          <button type="button" class="seg active" data-view="ring">Circular</button>
+          <button type="button" class="seg" data-view="linear">Lineal</button>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i class="line next"></i><code>next</code> → siguiente</span>
+        <span><i class="line prev"></i><code>prev</code> ← anterior</span>
+        <span><i class="chip-head">HEAD</i> primer nodo</span>
+        <span><i class="chip-current"></i> nodo actual</span>
+      </div>
+      <div class="viz" id="viz">
+        <div class="loading-block" id="viz-loading"><span class="spinner"></span>Cargando ronda…</div>
+      </div>
+      <div class="nav-strip">
+        <button class="btn round" id="btn-prev-ring" type="button" aria-label="Retroceder a la tarea anterior">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </button>
+        <span class="nav-hint" id="nav-hint">previous_task() · next_task()</span>
+        <button class="btn round" id="btn-next-ring" type="button" aria-label="Avanzar a la siguiente tarea">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <aside class="panel current-panel" aria-labelledby="current-title">
+      <div class="panel-head compact">
+        <h2 id="current-title">Tarea actual</h2>
+        <span class="pill subtle" id="current-position">—</span>
+      </div>
+      <div id="current-task"></div>
+    </aside>
+
+    <section class="panel integrity-panel" aria-labelledby="integrity-title">
+      <div class="panel-head compact">
+        <h2 id="integrity-title">Verificación de integridad</h2>
+        <button class="btn ghost small" id="btn-integrity-2" type="button">Ejecutar validate_integrity()</button>
+      </div>
+      <div id="integrity-result">
+        <p class="empty-note">La verificación aún no se ha ejecutado. El resultado proviene únicamente del backend.</p>
+      </div>
+    </section>
+
+    <section class="panel table-panel" aria-labelledby="table-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="table-title">Administración de tareas</h2>
+          <p class="muted">Orden real de la ronda, recorrido desde <code>head</code> siguiendo <code>next</code>.</p>
+        </div>
+        <div class="filters">
+          <label>Estado
+            <select id="filter-status">
+              <option value="ALL">Todos</option>
+              <option value="PENDING">Pendiente</option>
+              <option value="IN_PROGRESS">En ejecución</option>
+              <option value="COMPLETED">Completada</option>
+              <option value="BLOCKED">Bloqueada</option>
+            </select>
+          </label>
+          <label>Prioridad
+            <select id="filter-priority">
+              <option value="ALL">Todas</option>
+              <option value="LOW">Baja</option>
+              <option value="MEDIUM">Media</option>
+              <option value="HIGH">Alta</option>
+              <option value="CRITICAL">Crítica</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>ID</th><th>Tarea</th><th>Equipo</th><th>Prioridad</th><th>Estado</th><th>Técnico</th><th>Min</th><th>Origen</th><th class="right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="task-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">Persistencia local en <code>data/maintenance_state.json</code> · Servidor Python en localhost</footer>
+
+  <dialog id="task-dialog" class="dialog">
+    <form id="task-form" novalidate>
+      <header class="dialog-head">
+        <h3 id="task-dialog-title">Nueva tarea</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Cerrar">×</button>
+      </header>
+      <div class="form-grid">
+        <label class="field">Identificador <span class="hint">opcional, se genera si está vacío</span>
+          <input name="task_id" maxlength="20" placeholder="MT-010" pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,19}">
+        </label>
+        <label class="field">Título
+          <input name="title" required minlength="3" maxlength="80" placeholder="Inspect Rack B">
+        </label>
+        <label class="field">Equipo
+          <input name="equipment_name" required minlength="2" maxlength="60" placeholder="Rack B - Database">
+        </label>
+        <label class="field">Tipo de equipo
+          <select name="equipment_type" required>
+            <option value="SERVER">Servidor</option>
+            <option value="COOLING">Refrigeración</option>
+            <option value="UPS">UPS</option>
+            <option value="NETWORK">Red</option>
+            <option value="STORAGE">Almacenamiento</option>
+            <option value="SENSOR">Sensor ambiental</option>
+          </select>
+        </label>
+        <label class="field">Prioridad
+          <select name="priority" required>
+            <option value="LOW">Baja</option>
+            <option value="MEDIUM" selected>Media</option>
+            <option value="HIGH">Alta</option>
+            <option value="CRITICAL">Crítica</option>
+          </select>
+        </label>
+        <label class="field">Técnico asignado
+          <input name="assigned_technician" required minlength="3" maxlength="60" placeholder="Nombre del técnico">
+        </label>
+        <label class="field">Duración estimada (min)
+          <input name="estimated_minutes" type="number" required min="1" max="1440" step="1" value="30">
+        </label>
+        <label class="field insert-only">Posición en la ronda
+          <select name="position">
+            <option value="end">Al final — append()</option>
+            <option value="start">Al inicio — prepend()</option>
+            <option value="after">Después de… — insert_after()</option>
+          </select>
+        </label>
+        <label class="field insert-only" id="after-field" hidden>Insertar después de
+          <select name="after_task_id"></select>
+        </label>
+        <label class="field wide">Descripción
+          <textarea name="description" required minlength="5" maxlength="300" rows="3" placeholder="Qué se debe revisar"></textarea>
+        </label>
+      </div>
+      <p class="form-error" id="task-form-error" role="alert"></p>
+      <footer class="dialog-foot">
+        <button type="button" class="btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn primary" id="task-submit">Guardar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="block-dialog" class="dialog small">
+    <form id="block-form" novalidate>
+      <header class="dialog-head">
+        <h3>Bloquear tarea</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Cerrar">×</button>
+      </header>
+      <p class="muted" id="block-task-name"></p>
+      <label class="field wide">Motivo del bloqueo
+        <textarea name="reason" required minlength="5" maxlength="200" rows="3" placeholder="Ej.: falta repuesto del ventilador"></textarea>
+      </label>
+      <p class="form-error" id="block-form-error" role="alert"></p>
+      <footer class="dialog-foot">
+        <button type="button" class="btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn danger">Bloquear</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="dialog small">
+    <form method="dialog">
+      <header class="dialog-head">
+        <h3>Eliminar tarea</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Cerrar">×</button>
+      </header>
+      <p id="confirm-message"></p>
+      <p class="muted">Se ejecutará <code>remove(task_id)</code>: los nodos vecinos se enlazan entre sí.</p>
+      <footer class="dialog-foot">
+        <button type="button" class="btn ghost" data-close>Cancelar</button>
+        <button type="button" class="btn danger" id="confirm-delete">Eliminar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="details-dialog" class="dialog small">
+    <div>
+      <header class="dialog-head">
+        <h3>Detalle de la tarea</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Cerrar">×</button>
+      </header>
+      <div id="details-body"></div>
+      <footer class="dialog-foot">
+        <button type="button" class="btn ghost" data-close>Cerrar</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
